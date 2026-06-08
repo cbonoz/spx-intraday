@@ -19,6 +19,10 @@ uv sync
 uv run run.py --text
 ```
 
+## Requirements
+
+- **Finnhub API key** — set `FINNHUB_API_KEY` in the `HERMES_HOME/workspaces/.env` file. Only used for the market status (holiday check) endpoint on the free tier.
+
 ## API Calls Per Run
 
 - 1 yfinance batch download (`^GSPC` + `^VIX`)
