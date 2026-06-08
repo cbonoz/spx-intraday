@@ -1,6 +1,6 @@
 # SPX 0DTE Signal Pipeline
 
-Runs at **10:30 AM ET** weekdays. Evaluates 5 signals from SPX, VIX, and /ES data to produce a directional bias and suggested 0DTE option strikes.
+Evaluates 5 signals from SPX, VIX, and /ES data to produce a directional bias and suggested 0DTE option strikes. Designed to run at 10:30 AM ET when the Initial Balance window closes.
 
 ## Signals
 
@@ -38,4 +38,3 @@ No HTML scraping. All data from structured APIs.
 - Python 3.11+ via uv
 - yfinance (market data)
 - finnhub-python (market status)
-- Scheduled via Hermes cron: Mon-Fri 10:30 AM ET
