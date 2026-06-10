@@ -213,6 +213,7 @@ def estimate_move_pct(signals: dict) -> float:
     """Estimate the expected full-day range as a percentage of SPX price.
 
     Uses IB range as a base and scales by volume/volatility factors.
+    Capped at 2.5% (~185 SPX pts) to avoid unrealistic blow-off estimates.
     """
     ib_range = signals.get("ib_range")
     spx_price = signals.get("spx_price")
@@ -224,18 +225,17 @@ def estimate_move_pct(signals: dict) -> float:
 
     base_range = ib_range / spx_price * 100  # IB as % of price
 
-    # Scale: on average the day range is ~2.5x the IB range
-    # But this varies significantly with IB width
-    multiplier = 2.5
+    # Scale: on average the day range is ~2.0-2.5x the IB range
+    # Conservative multiplier: even wide IB days (ratio > 1.3) max out ~2.8x
+    multiplier = 2.0
     if ib_ratio:
-        # Empirical: wide IB days (ratio > 1.3) can produce 3-5x expansion
-        # Standard days (ratio ~1.0) produce ~2.5x
-        multiplier = 2.0 + (ib_ratio * 1.2)
-        multiplier = min(5.0, max(1.5, multiplier))
-    if vol_ratio and vol_ratio > 1.3:
+        multiplier = 1.6 + (ib_ratio * 0.5)  # e.g. 1.0 ratio → 2.1x, 1.7 ratio → 2.45x, 2.0 ratio → 2.6x
+        multiplier = min(2.8, max(1.4, multiplier))
+    if vol_ratio and vol_ratio > 1.5:
         multiplier *= 1.1
 
-    return round(base_range * multiplier, 2)
+    move = round(base_range * multiplier, 2)
+    return min(move, 2.5)  # Absolute cap at 2.5% (~185 SPX pts)
 
 
 def generate_strike_recommendations(signals: dict, bias: str, move_pct: float) -> list:

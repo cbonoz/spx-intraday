@@ -17,6 +17,7 @@ API calls per run: 2 yfinance batch requests + 1 finnhub request = 3 total.
 import json
 import os
 import sys
+import time
 import warnings
 
 import finnhub
@@ -35,15 +36,32 @@ ET = "America/New_York"
 # ── Data Fetching ──────────────────────────────────────────────────────────
 
 
-def fetch_market_data():
+def fetch_market_data(retries=2):
     """Fetch SPX, VIX, and /ES data via yfinance in one batch call per period.
+
+    Retries on transient network errors (Broken pipe, connection reset).
 
     Returns:
         spx: SPX DataFrame (10d, 5m intervals), tz=ET
         vix: VIX DataFrame (10d, 5m intervals), tz=ET
         es: /ES futures DataFrame (5d, 5m intervals), tz=ET, or None
     """
-    # Batch SPX + VIX together (same period/interval)
+    last_error = None
+    for attempt in range(1 + retries):
+        try:
+            _result = _do_fetch()
+            if _result is not None:
+                return _result
+        except (RuntimeError, ConnectionError, OSError) as e:
+            last_error = e
+            if attempt < retries:
+                time.sleep(2 ** attempt)  # 2s, 4s backoff
+            continue
+    raise RuntimeError(f"Market data fetch failed after {retries + 1} attempts: {last_error}")
+
+
+def _do_fetch():
+    """Inner fetch (one attempt) — called by fetch_market_data with retry wrapper."""
     combined = yf.download(
         [SPX_TICKER, VIX_TICKER],
         period="10d",
@@ -98,18 +116,24 @@ def calculate_signals(spx, vix, es):
     now_ts = pd.Timestamp.now(tz=ET)
     today = now_ts.normalize()
 
+    # yfinance returns 5m data indexed in America/Chicago, so normalize to tz-naive for date comparison
+    spx_index_dates = spx.index.tz_convert(ET).normalize() if spx.index.tz is not None else spx.index.normalize()
+    vix_index_dates = vix.index.tz_convert(ET).normalize() if not vix.empty and vix.index.tz is not None else (vix.index.normalize() if not vix.empty else pd.DatetimeIndex([]))
+
     # Find today's data (may be partial during the day)
-    spx_today = spx[spx.index.normalize() == today] if today in spx.index.normalize().values else pd.DataFrame()
+    # Use boolean mask directly instead of 'in' operator (numpy datetime64 vs tz-aware Timestamp issue)
+    today_mask = (spx_index_dates == today)
+    spx_today = spx[today_mask] if today_mask.any() else pd.DataFrame()
 
     # ── Determine the most recent full trading day ──
     if not spx_today.empty:
         target_date = today
     else:
-        available = sorted(spx.index.normalize().unique(), reverse=True)
+        available = sorted(spx_index_dates.unique(), reverse=True)
         target_date = available[0] if len(available) > 0 else today
 
-    spx_day = spx[spx.index.normalize() == target_date]
-    vix_day = vix[vix.index.normalize() == target_date] if not vix.empty else pd.DataFrame()
+    spx_day = spx[spx_index_dates == target_date]
+    vix_day = vix[vix_index_dates == target_date] if not vix.empty else pd.DataFrame()
 
     result = {
         "timestamp": now_ts.isoformat(),
@@ -379,7 +403,7 @@ def main():
         print(json.dumps(signals, indent=2, default=str))
     except Exception as e:
         error = {"error": str(e), "timestamp": str(pd.Timestamp.now(tz=ET))}
-        print(json.dumps(error), file=sys.stderr)
+        print(json.dumps(error))  # stdout for pipe compatibility
         sys.exit(1)
 
 

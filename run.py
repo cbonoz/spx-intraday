@@ -19,7 +19,7 @@ import os
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 GRABBER = os.path.join(SCRIPT_DIR, "signal_grabber.py")
 ANALYZER = os.path.join(SCRIPT_DIR, "analyzer.py")
-PYTHON = os.path.join(SCRIPT_DIR, ".venv", "bin", "python3")
+PYTHON = sys.executable or os.path.join(SCRIPT_DIR, ".venv", "bin", "python3")
 
 
 def run_pipeline() -> dict:
@@ -30,7 +30,15 @@ def run_pipeline() -> dict:
         capture_output=True, text=True, timeout=60
     )
     if grab.returncode != 0:
-        return {"error": f"signal_grabber failed: {grab.stderr.strip()}"}
+        err_msg = grab.stderr.strip()
+        # Try to get structured error from stdout (if error was written there)
+        try:
+            err_data = json.loads(grab.stdout)
+            if "error" in err_data:
+                err_msg = err_data["error"]
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return {"error": f"signal_grabber failed: {err_msg}"}
 
     try:
         signals = json.loads(grab.stdout)
